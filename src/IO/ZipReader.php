@@ -47,10 +47,13 @@ class ZipReader
 
     protected array $options;
 
+    /** @var ?int $temp_max_memory */
+    protected $temp_max_memory;
+
     /**
      * @param resource $inStream
      */
-    public function __construct($inStream, array $options = [])
+    public function __construct($inStream, array $options = [], ?int $temp_max_memory = null)
     {
         if (!\is_resource($inStream)) {
             throw new InvalidArgumentException('Stream must be a resource');
@@ -95,6 +98,8 @@ class ZipReader
         /** @noinspection AdditionOperationOnArraysInspection */
         $options += $this->getDefaultOptions();
         $this->options = $options;
+
+        $this->temp_max_memory = $temp_max_memory;
     }
 
     protected function getDefaultOptions(): array
@@ -352,7 +357,7 @@ class ZipReader
         $cdOffset = $endCD->getCdOffset();
         fseek($this->inStream, $cdOffset);
 
-        if (!($cdStream = fopen('php://temp', 'w+b'))) {
+        if (!($cdStream = fopen($this->getTempStreamUri(), 'w+b'))) {
             // @codeCoverageIgnoreStart
             throw new ZipException('A temporary resource cannot be opened for writing.');
             // @codeCoverageIgnoreEnd
@@ -383,6 +388,15 @@ class ZipReader
         }
 
         return $entries;
+    }
+
+    private function getTempStreamUri()
+    {
+        $temp_stream_url_suffix = is_null($this->temp_max_memory)
+            ? ''
+            : "/maxmemory:{$this->temp_max_memory}";
+
+        return "php://temp${temp_stream_url_suffix}";
     }
 
     /**
@@ -680,7 +694,8 @@ class ZipReader
      */
     public function getEntryStream(ZipSourceFileData $zipFileData)
     {
-        $outStream = fopen('php://temp', 'w+b');
+
+        $outStream = fopen($this->getTempStreamUri(), 'w+b');
         $this->copyUncompressedDataToStream($zipFileData, $outStream);
         rewind($outStream);
 

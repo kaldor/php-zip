@@ -37,14 +37,18 @@ class ZipNewData implements ZipData
      * @param string|resource $data Raw string data or resource
      * @noinspection PhpMissingParamTypeInspection
      */
-    public function __construct(ZipEntry $zipEntry, $data)
+    public function __construct(ZipEntry $zipEntry, $data, ?int $temp_max_memory = null)
     {
         $this->zipEntry = $zipEntry;
 
         if (\is_string($data)) {
             $zipEntry->setUncompressedSize(\strlen($data));
 
-            if (!($handle = fopen('php://temp', 'w+b'))) {
+            $temp_stream_url_suffix = is_null($temp_max_memory)
+                ? ''
+                : "/maxmemory:${temp_max_memory}";
+
+            if (!($handle = fopen("php://temp${temp_stream_url_suffix}", 'w+b'))) {
                 // @codeCoverageIgnoreStart
                 throw new \RuntimeException('A temporary resource cannot be opened for writing.');
                 // @codeCoverageIgnoreEnd

@@ -61,12 +61,16 @@ class ZipFile implements \Countable, \ArrayAccess, \Iterator
         'xpi' => 'application/x-xpinstall',
     ];
 
+    /** @var ?int $temp_max_memory */
+    protected $temp_max_memory;
+
     protected ZipContainer $zipContainer;
 
     private ?ZipReader $reader = null;
 
-    public function __construct()
+    public function __construct(?int $temp_max_memory = null)
     {
+        $this->temp_max_memory = $temp_max_memory;
         $this->zipContainer = $this->createZipContainer();
     }
 
@@ -75,12 +79,12 @@ class ZipFile implements \Countable, \ArrayAccess, \Iterator
      */
     protected function createZipReader($inputStream, array $options = []): ZipReader
     {
-        return new ZipReader($inputStream, $options);
+        return new ZipReader($inputStream, $options, $this->temp_max_memory);
     }
 
     protected function createZipWriter(): ZipWriter
     {
-        return new ZipWriter($this->zipContainer);
+        return new ZipWriter($this->zipContainer, $this->temp_max_memory);
     }
 
     protected function createZipContainer(?ImmutableZipContainer $sourceContainer = null): ZipContainer
@@ -126,7 +130,7 @@ class ZipFile implements \Countable, \ArrayAccess, \Iterator
             throw new InvalidArgumentException('Empty string passed');
         }
 
-        if (!($handle = fopen('php://temp', 'r+b'))) {
+        if (!($handle = fopen($this->getTempStreamUri(), 'r+b'))) {
             // @codeCoverageIgnoreStart
             throw new ZipException('A temporary resource cannot be opened for writing.');
             // @codeCoverageIgnoreEnd
@@ -515,7 +519,7 @@ class ZipFile implements \Countable, \ArrayAccess, \Iterator
         }
 
         $zipEntry = new ZipEntry($entryName);
-        $zipEntry->setData(new ZipNewData($zipEntry, $contents));
+        $zipEntry->setData(new ZipNewData($zipEntry, $contents, $this->temp_max_memory));
         $zipEntry->setUncompressedSize($length);
         $zipEntry->setCompressionMethod($compressionMethod);
         $zipEntry->setCreatedOS(ZipPlatform::OS_UNIX);
@@ -623,7 +627,7 @@ class ZipFile implements \Countable, \ArrayAccess, \Iterator
             $zipEntry->setCrc(crc32($linkTarget));
             $filePerms |= UnixStat::UNX_IFLNK;
 
-            $zipData = new ZipNewData($zipEntry, $linkTarget);
+            $zipData = new ZipNewData($zipEntry, $linkTarget, $this->temp_max_memory);
         } elseif ($file->isFile()) {
             if (isset($options[ZipOptions::COMPRESSION_METHOD])) {
                 $compressionMethod = $options[ZipOptions::COMPRESSION_METHOD];
@@ -766,7 +770,7 @@ class ZipFile implements \Countable, \ArrayAccess, \Iterator
         $zipEntry->setUnixMode($unixMode);
         $zipEntry->setCompressionMethod($compressionMethod);
         $zipEntry->setTime(time());
-        $zipEntry->setData(new ZipNewData($zipEntry, $stream));
+        $zipEntry->setData(new ZipNewData($zipEntry, $stream, $this->temp_max_memory));
 
         $this->addZipEntry($zipEntry);
 
@@ -955,6 +959,15 @@ class ZipFile implements \Countable, \ArrayAccess, \Iterator
         ?int $compressionMethod = null
     ): self {
         return $this->addGlob($inputDir, $globPattern, $localPath, false, $compressionMethod);
+    }
+
+    private function getTempStreamUri()
+    {
+        $temp_stream_url_suffix = is_null($this->temp_max_memory)
+            ? ''
+            : "/maxmemory:{$this->temp_max_memory}";
+
+        return "php://temp${temp_stream_url_suffix}";
     }
 
     /**
@@ -1585,7 +1598,7 @@ class ZipFile implements \Countable, \ArrayAccess, \Iterator
     {
         $mimeType ??= $this->getMimeTypeByFilename($outputFilename);
 
-        if (!($handle = fopen('php://temp', 'w+b'))) {
+        if (!($handle = fopen($this->getTempStreamUri(), 'w+b'))) {
             throw new InvalidArgumentException('php://temp cannot open for write.');
         }
         $this->writeZipToStream($handle);
@@ -1738,7 +1751,7 @@ class ZipFile implements \Countable, \ArrayAccess, \Iterator
      */
     public function outputAsString(): string
     {
-        if (!($handle = fopen('php://temp', 'w+b'))) {
+        if (!($handle = fopen($this->getTempStreamUri(), 'w+b'))) {
             throw new InvalidArgumentException('php://temp cannot open for write.');
         }
         $this->writeZipToStream($handle);

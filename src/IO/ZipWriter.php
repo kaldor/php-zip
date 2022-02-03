@@ -32,10 +32,15 @@ class ZipWriter
     /** @var int Chunk read size */
     public const CHUNK_SIZE = 8192;
 
+    /** @var ?int $temp_max_memory */
+    protected $temp_max_memory;
+
     protected ZipContainer $zipContainer;
 
-    public function __construct(ZipContainer $container)
+    public function __construct(ZipContainer $container, ?int $temp_max_memory = null)
     {
+        $this->temp_max_memory = $temp_max_memory;
+
         // we clone the container so that the changes made to
         // it do not affect the data in the ZipFile class
         $this->zipContainer = clone $container;
@@ -286,7 +291,11 @@ class ZipWriter
                 $contextFilter = $this->appendEncryptionFilter($outStream, $entry, $uncompressedSize);
                 $checksum = $this->writeAndCountChecksum($entryStream, $outStream, $uncompressedSize);
             } else {
-                $compressStream = fopen('php://temp', 'w+b');
+                $temp_stream_url_suffix = is_null($this->temp_max_memory)
+                    ? ''
+                    : "/maxmemory:{$this->temp_max_memory}";
+
+                $compressStream = fopen('php://temp'.$temp_stream_url_suffix, 'w+b');
                 $contextFilter = $this->appendCompressionFilter($compressStream, $entry);
                 $checksum = $this->writeAndCountChecksum($entryStream, $compressStream, $uncompressedSize);
 
